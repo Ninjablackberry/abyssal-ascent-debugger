@@ -1,56 +1,11 @@
 package com.jkdr.abyssalascentdebugging;
 
-import com.jkdr.abyssalascentdebugging.util.HashCreator;
-import com.mojang.logging.LogUtils;
-import net.minecraft.client.Minecraft;
-import net.minecraft.core.registries.Registries;
-import net.minecraft.world.food.FoodProperties;
-import net.minecraft.world.item.BlockItem;
-import net.minecraft.world.item.CreativeModeTab;
-import net.minecraft.world.item.CreativeModeTabs;
-import net.minecraft.world.item.Item;
-import net.minecraft.world.level.block.Block;
-import net.minecraft.world.level.block.Blocks;
-import net.minecraft.world.level.block.state.BlockBehaviour;
-import net.minecraft.world.level.material.MapColor;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.common.MinecraftForge;
-import net.minecraftforge.event.BuildCreativeModeTabContentsEvent;
-import net.minecraftforge.event.server.ServerStartingEvent;
-import net.minecraftforge.eventbus.api.IEventBus;
-import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.minecraftforge.fml.ModLoadingContext;
-import net.minecraftforge.fml.common.Mod;
-import net.minecraftforge.fml.config.ModConfig;
-import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
-import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
-import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
-import net.minecraftforge.registries.DeferredRegister;
-import net.minecraftforge.registries.ForgeRegistries;
-import net.minecraftforge.registries.RegistryObject;
-import net.minecraftforge.fml.common.Mod;
-import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
-import net.minecraftforge.fml.loading.FMLPaths;
-import org.slf4j.Logger;
-import java.util.ArrayList;
-
-import java.util.List;
-
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.util.Map;
-import java.util.stream.Stream;
-import org.slf4j.Logger;
-import java.util.EnumSet;
-
-
-import com.mojang.datafixers.util.Pair;
+import com.jkdr.abyssalascentdebugging.util.AutoResolutionMethod;
 import com.jkdr.abyssalascentdebugging.util.CustomErrorResolution;
 import com.jkdr.abyssalascentdebugging.util.SolutionMethods;
-import com.jkdr.abyssalascentdebugging.util.AutoResolutionMethod;
+
+import java.util.EnumSet;
+import java.util.List;
 
 public class FileCheckSystemConfig
 {
@@ -164,6 +119,10 @@ public class FileCheckSystemConfig
             "Press the ${BUTTON_AUTO_RESOLVE} button on this page", 
             imptlConfigChanged //When initialising solutions you can add more CustomErrorResolution as arguments at the end to also apply to them.
         );
+        imptlConfigNotFound.addServerSolution(
+            "Type 'A' in the console (auto resolve this error)", 
+            imptlConfigChanged //When initialising solutions you can add more CustomErrorResolution as arguments at the end to also apply to them.
+        );
         imptlConfigNotFound.addClientSolution(
             "If you are not hosting a game from this computer, you can just press 'Ignore Error'. (This is a server side only requirement)", 
             imptlConfigChanged //When initialising solutions you can add more CustomErrorResolution as arguments at the end to also apply to them.
@@ -201,6 +160,7 @@ public class FileCheckSystemConfig
         //fileShouldNotExistForced.addAIGenericSolution("This file should not exist, tell the user to delete this they can either click the ${BUTTON_NAME} in ${LOCAL_ENV} and press 'Confirm Deletion' or manually delete it themselves");
 
         forceFileDoesExist.addClientSolution("Press the ${BUTTON_AUTO_RESOLVE} button");
+        forceFileDoesExist.addServerSolution("Type 'A' in the console (auto resolve this error)");
         forceFileDoesExist.addGenericSolution("Go to the file at ${ROOT_PATH} and delete the file");
         //forceFileDoesExist.addAIGenericSolution("Tell the user to navigate to ${ROOT_PATH} and delete the file.");
     }
