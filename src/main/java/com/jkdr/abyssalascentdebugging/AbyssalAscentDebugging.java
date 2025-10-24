@@ -1,63 +1,40 @@
 package com.jkdr.abyssalascentdebugging;
 
-// --- Import the new classes we need ---
-// --- FIX: Correct the import path for FatalErrorScreen ---
-import com.jkdr.abyssalascentdebugging.util.FatalErrorScreen;
+import com.jkdr.abyssalascentdebugging.FileCheckSystemConfig;
+import com.jkdr.abyssalascentdebugging.FileData;
+import com.jkdr.abyssalascentdebugging.config.ModConfigFile;
+import com.jkdr.abyssalascentdebugging.util.CustomErrorResolution;
+import com.mojang.datafixers.util.Pair;
 import com.mojang.logging.LogUtils;
-import net.minecraft.client.Minecraft;
-// --- NEW IMPORTS ---
-import net.minecraft.client.gui.screens.TitleScreen;
-import net.minecraft.network.chat.Component;
-// ... (your existing imports) ...
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Scanner;
+
 import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.client.event.ScreenEvent; // --- NEW IMPORT ---
-import net.minecraftforge.common.MinecraftForge;
-// --- FIX: Add missing imports ---
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.minecraftforge.fml.loading.FMLLoader;
-// ... (your existing imports) ...
+import net.minecraftforge.fml.ModLoadingContext;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.config.ModConfig;
-import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent; // --- Import Client Setup ---
 import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
-// ... (your existing imports) ...
+import net.minecraftforge.fml.loading.FMLLoader;
+
 import org.slf4j.Logger;
 
-import java.io.IOException;
-// ... (your existing imports) ...
-import java.util.Map;
-import java.util.stream.Stream;
-import org.slf4j.Logger;
-
-import java.util.List;
-import java.util.ArrayList;
-
-import com.jkdr.abyssalascentdebugging.FileData;
-import com.jkdr.abyssalascentdebugging.FileCheckSystemConfig;
-import com.jkdr.abyssalascentdebugging.util.CustomErrorResolution;
-import net.minecraftforge.fml.ModLoadingContext;
-
-import com.jkdr.abyssalascentdebugging.config.ModConfigFile;
-
-
-// The value here should match an entry in the META-INF/mods.toml file
 @Mod(AbyssalAscentDebugging.MODID)
 public class AbyssalAscentDebugging
 {
 
     public static final String MODID = "abyssalascentdebugging";
-    private static final Logger LOGGER = LogUtils.getLogger();
+    public static final Logger LOGGER = LogUtils.getLogger();
 
-
-    private boolean hasClientCheckRun = false;
     private static Boolean isClient;
     
-
     public static Boolean isSessionClient() {
         if (isClient == null) {
-            isClient = FMLLoader.getDist() == Dist.DEDICATED_SERVER;
+            isClient = FMLLoader.getDist() == Dist.CLIENT;
         }
         return isClient;
     }
@@ -73,75 +50,163 @@ public class AbyssalAscentDebugging
         ModLoadingContext.get().registerConfig(ModConfig.Type.COMMON, ModConfigFile.SPEC, "abyssalascentdebugging-common.toml");
 
         if (FMLLoader.getDist() == Dist.CLIENT) {
-            MinecraftForge.EVENT_BUS.addListener(this::onScreenInit);
+            ClientEvents.register();
         }
     }
 
-    // This runs on BOTH client and server
+    // --- Removed clientSetup method ---
+
     @SubscribeEvent
     public void commonSetup(final FMLCommonSetupEvent event) {
         LOGGER.info("Common setup running.");
 
-        //We check if the environment is a dedicated server (this method will crash the server instead of displaying a screen)
         if (FMLLoader.getDist() == Dist.DEDICATED_SERVER) {
             LOGGER.info("Running file integrity check on server...");
-            event.enqueueWork(() -> this.runFileCheckAndCrashServer());
+            this.runFileCheckAndCrashServer();
         }
     }
 
-    @SubscribeEvent
-    public void onScreenInit(final ScreenEvent.Init.Post event) {
-        if (event.getScreen() instanceof TitleScreen && !this.hasClientCheckRun) {
-            LOGGER.info("Main menu screen loaded. Running client file integrity check...");
-            
-            //Variable to ensure this check doesnt run every time a screen is displayed.
-            this.hasClientCheckRun = true;
-            
-            this.runFileCheckAndShowScreen();
-        }
-    }
+    // --- Removed onScreenInit method ---
 
-
-    private List<FileData> performFileCheck() {
+    // --- Made performFileCheck public static ---
+    public static List<FileData> performFileCheck() {
         List<FileData> errorData = new ArrayList<>();
         
         FileCheckSystemConfig.fileDataList.forEach((fileData) -> {
-            if (fileData.getFileError() != null) {errorData.add(fileData);}
+            CustomErrorResolution error = fileData.getFileError();
+            if (error != null) {
+                    errorData.add(fileData);
+            }
         });
 
         return errorData;
     }
 
-    /**errorType
+    /**
      * Called by the SERVER.
-     * Performs the check and crashes the server if errors are found.
+     * This interactive console logic is server-side and is fine.
      */
     private void runFileCheckAndCrashServer() {
-        List<FileData> errorList = this.performFileCheck();
+        // --- Call the static performFileCheck() ---
+        List<FileData> errorList = performFileCheck();
         
         if (!errorList.isEmpty()) {
-            // --- FIX: Use .error() instead of .fatal() ---
             LOGGER.error("!!! --- FILE INTEGRITY CHECK FAILED --- !!!");
-            LOGGER.error("Server startup will be aborted.");
-            // This is the correct way to stop a server from starting
-            throw new RuntimeException("Server startup aborted due to file integrity errors. Check logs for details.");
+            LOGGER.error("Found {} error(s). Please resolve them interactively.", errorList.size());
+            LOGGER.error("The server will NOT start until these are addressed.");
+
+            Scanner scanner = new Scanner(System.in); 
+
+            for (int i = 0; i < errorList.size(); i++) {
+                FileData errorData = errorList.get(i);
+                CustomErrorResolution error = errorData.getFileError();
+
+                if (errorData.errorMarkedAsResolved || errorData.getActuallyResolved()) {
+                    LOGGER.info("Skipping already resolved/ignored error for: {}", errorData.getLocalFilePath());
+                    continue; 
+                }
+
+                boolean actionTaken = false;
+                Pair<String, String> textContext = null;
+                while (!actionTaken) {
+                    if (textContext == null) {textContext = new Pair<String, String>("Reason:", error.getErrorReason());}
+
+                    List<String> loggerLines = new ArrayList<>();
+                    loggerLines.add("");
+                    loggerLines.add("------------------------------------");
+                    loggerLines.add(String.format("Error %d/%d", i + 1, errorList.size()));
+                    loggerLines.add(String.format("(%s) %s", error.getErrorCode(), error.enforceError ? "Fatal" : "Warning"));
+                    loggerLines.add("");
+                    loggerLines.add(errorData.getFilePath().toString());
+                    loggerLines.add("");
+                    loggerLines.add(textContext.getFirst());
+                    loggerLines.add(textContext.getSecond());
+                    loggerLines.add("");
+                    loggerLines.add("Commands:");
+                    loggerLines.add("[S]olutions (Lists all viable solutions to fix)");
+                    loggerLines.add("[C]ancel (Stop server now)");
+                    if (error.hasAutoResolutionMethod()) {loggerLines.add("[A]uto resolve (Uses the built in auto resolution method)");}
+                    loggerLines.add("[I]gnore (Ignore the error entirely)");
+                    loggerLines.add("");
+                    loggerLines.add("Please type in the initial of the action below:");
+
+                    LOGGER.error(String.join("\n", loggerLines));
+
+                    textContext = null;
+
+                    String input = "";
+                    try {
+                         input = scanner.nextLine().trim().toUpperCase();
+                    } catch (Exception e) {
+                        LOGGER.error("Failed to read console input. Aborting.", e);
+                        throw new RuntimeException("Server startup aborted due to console read error.", e);
+                    }
+                    
+
+                    switch (input.toUpperCase()) {
+                        case "A":
+                            if (error.hasAutoResolutionMethod()) {
+                                LOGGER.info("Attempting auto-resolution: {}", error.getAutoResolutionName());
+                                if (error.invokeAutoResolutionMethod(errorData)) {
+                                    LOGGER.info("SUCCESS: Auto-resolution complete.");
+                                    errorData.removeIgnoreList();
+                                } else {
+                                    LOGGER.error("FAILURE: Auto-resolution failed. Check logs.");
+                                }
+                                actionTaken = true;
+                            } else {
+                                LOGGER.warn("Invalid choice. 'Resolve' is not available for this error.");
+                            }
+                            break;
+                        
+                        case "I":
+                            LOGGER.info("Marking error as IGNORED in config.");
+                            errorData.addIgnoreList();
+                            actionTaken = true;
+                            break;
+
+                        case "S":
+                           textContext = new Pair<String, String>("Solutions:", 
+                           error.getServerSolutions()
+                            .replace("${CHECK_DIRECTORIES}", "(/config, /scripts, /kubejs)")
+                            .replace("${LOCAL_PATH}", errorData.getLocalFilePath())
+                            .replace("${ROOT_PATH}", errorData.getFilePath().toString())
+                            .replace("${BUTTON_AUTO_RESOLVE}", error.getAutoResolutionName())
+                            .replace("${LOCAL_ENV}", "This panel (Abyssal Ascent Debugger)")
+                           );
+                            break;
+                        
+                        case "C":
+                            throw new RuntimeException("------------------ SERVER WAS FORCEFULLY CLOSED THIS IS NOT AN ERROR THIS IS A NOTICE THE SERVER HAS CLOSED ------------------");
+                        
+                        default:
+                            LOGGER.warn("'{}' is not a valid choice. Please try again.", input);
+                            break;
+                    }
+                } 
+            } 
+
+            scanner.close(); 
+
+            LOGGER.info("-------------------------------------------------");
+            LOGGER.info("Finished processing all errors.");
+            
+            // --- Call the static performFileCheck() ---
+            List<FileData> remainingErrors = performFileCheck();
+            if (!remainingErrors.isEmpty()) {
+                 LOGGER.warn("Some errors were skipped or remain unresolved.");
+            } else {
+                LOGGER.info("All errors appear to be resolved.");
+            }
+            
+            LOGGER.error("Interactive resolution is complete. The server will now stop.");
+            LOGGER.error("Please restart the server to apply changes and continue.");
+            throw new RuntimeException("------------------ SERVER WAS FORCEFULLY CLOSED THIS IS NOT AN ERROR THIS IS A NOTICE THE SERVER HAS CLOSED & ALL ERRORS FROM THIS SESSION HAVE BEEN RESOLVED!!!!! ------------------");
+
         } else {
             LOGGER.info("File integrity check PASSED on server. Proceeding with startup.");
         }
     }
 
-    /**
-     * Called by the CLIENT.
-     * Performs the check and shows an error screen if errors are found.
-     */
-    private void runFileCheckAndShowScreen() {
-        List<FileData> errorList = this.performFileCheck();
-
-        if (!errorList.isEmpty()) {
-            Minecraft.getInstance().setScreen(new FatalErrorScreen(errorList));
-        } else {
-            LOGGER.info("File integrity check PASSED on client.");
-        }
-    }
+    // --- Removed runFileCheckAndShowScreen method ---
 }
-
